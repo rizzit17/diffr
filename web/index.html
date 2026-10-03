@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diffr — Test Impact Analysis</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1 class="title">Diffr</h1>
+      <div class="subtitle">Test impact analysis — run history</div>
+    </header>
+
+    <section class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Runs</div>
+        <div class="stat-value" id="statTotalRuns">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg % Saved</div>
+        <div class="stat-value accent" id="statAvgPct">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Time Saved</div>
+        <div class="stat-value accent" id="statTotalMs">-</div>
+      </div>
+    </section>
+
+    <section class="chart-section">
+      <div class="section-label">Cumulative Time Saved (ms)</div>
+      <div class="chart-wrapper">
+        <canvas id="savingsChart"></canvas>
+      </div>
+    </section>
+
+    <section class="table-section">
+      <div class="table-header-bar">
+        <div class="section-label" style="margin-bottom: 0;">Recent Test Executions</div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Commit Pair</th>
+            <th>Timestamp</th>
+            <th>Changed Funcs</th>
+            <th>Impacted / Total</th>
+            <th>Time Saved</th>
+            <th>Cache</th>
+          </tr>
+        </thead>
+        <tbody id="runsTableBody">
+          <tr>
+            <td colspan="6" class="empty-state">Loading run history...</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
