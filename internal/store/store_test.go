@@ -5,6 +5,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 func TestStore_LocalFallback(t *testing.T) {
@@ -92,5 +94,44 @@ func TestStore_LocalFallback(t *testing.T) {
 	expectedAvgPct := (80.0 + 99.0) / 2.0
 	if stats.AvgPctTimeSaved != expectedAvgPct {
 		t.Errorf("AvgPctTimeSaved = %f, want %f", stats.AvgPctTimeSaved, expectedAvgPct)
+	}
+}
+
+func TestLiveMongoIndexes(t *testing.T) {
+	s := New("mongodb://127.0.0.1:27017", "")
+	if !s.IsConnected() {
+		t.Skip("MongoDB not running on localhost:27017, skipping live index verification")
+	}
+	defer s.Close(t.Context())
+
+	cursor, err := s.collection.Indexes().List(t.Context())
+	if err != nil {
+		t.Fatalf("Indexes().List() error = %v", err)
+	}
+
+	var indexes []bson.M
+	if err := cursor.All(t.Context(), &indexes); err != nil {
+		t.Fatalf("cursor.All error = %v", err)
+	}
+
+	hasCompound := false
+	hasTimestamp := false
+	for _, idx := range indexes {
+		name := idx["name"]
+		key := idx["key"]
+		t.Logf("Index discovered in MongoDB: name=%v, key=%v", name, key)
+		if name == "idx_repo_refs" {
+			hasCompound = true
+		}
+		if name == "idx_timestamp_desc" {
+			hasTimestamp = true
+		}
+	}
+
+	if !hasCompound {
+		t.Errorf("expected compound index 'idx_repo_refs' {repo_path: 1, ref1: 1, ref2: 1} to be present")
+	}
+	if !hasTimestamp {
+		t.Errorf("expected timestamp index 'idx_timestamp_desc' {timestamp: -1} to be present")
 	}
 }

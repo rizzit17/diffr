@@ -73,7 +73,6 @@ func handleDiff(args []string) {
 		ref2 = remaining[1]
 	}
 
-	start := time.Now()
 	repoHash := cache.ComputeRepoHash(*repoPath)
 	cClient := cache.New("")
 	defer cClient.Close()
@@ -81,11 +80,13 @@ func handleDiff(args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
+	start := time.Now()
+
 	// 1. Cache-first lookup
 	if cached, hit := cClient.GetImpact(ctx, repoHash, ref1, ref2); hit {
 		elapsed := time.Since(start)
 		fmt.Printf("Diff Analysis: %s..%s (repo: %s)\n", ref1, ref2, *repoPath)
-		fmt.Printf("Status: CACHE HIT (retrieval: %v)\n\n", elapsed)
+		fmt.Printf("Status: CACHE HIT (skipped AST analysis, retrieved in %v)\n\n", elapsed)
 		printImpactSummary(cached.ChangedFiles, cached.ChangedFunctions, cached.ImpactedTests, cached.TotalTestsInRepo, cached.TestsSkipped)
 		return
 	}
@@ -110,6 +111,7 @@ func handleDiff(args []string) {
 	// 3. Populate cache
 	cClient.SetImpact(ctx, repoHash, ref1, ref2, &cache.CachedImpact{
 		ImpactedTests:    res.ImpactedTests,
+		TestPackages:     res.TestPackages,
 		ChangedFunctions: res.ChangedFunctions,
 		ChangedFiles:     res.ChangedFiles,
 		TotalTestsInRepo: res.TotalTestsInRepo,
@@ -171,7 +173,6 @@ func handleRun(args []string) {
 		ref2 = remaining[1]
 	}
 
-	startTotal := time.Now()
 	repoHash := cache.ComputeRepoHash(*repoPath)
 	cClient := cache.New("")
 	defer cClient.Close()
@@ -183,11 +184,14 @@ func handleRun(args []string) {
 		changedFiles     []string
 		changedFuncs     []string
 		impactedTests    []string
+		testPackages     map[string]string
 		totalTestsInRepo int
 		testsSkipped     int
 		cacheHit         bool
-		graph            *astgraph.Graph
+		rn               *runner.Runner
 	)
+
+	startAnalysis := time.Now()
 
 	// 1. Check Redis cache for impact resolution
 	if cached, hit := cClient.GetImpact(ctx, repoHash, ref1, ref2); hit {
@@ -195,15 +199,11 @@ func handleRun(args []string) {
 		changedFiles = cached.ChangedFiles
 		changedFuncs = cached.ChangedFunctions
 		impactedTests = cached.ImpactedTests
+		testPackages = cached.TestPackages
 		totalTestsInRepo = cached.TotalTestsInRepo
 		testsSkipped = cached.TestsSkipped
 
-		// Load graph for package directory lookups during run
-		var err error
-		graph, err = astgraph.Build(*repoPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not rebuild AST graph for runner: %v\n", err)
-		}
+		rn = runner.NewFromCache(*repoPath, testPackages, totalTestsInRepo)
 	} else {
 		// Cache miss: full AST diff & reverse call graph traversal
 		diffEng := diffengine.New(*repoPath)
@@ -213,8 +213,7 @@ func handleRun(args []string) {
 			os.Exit(1)
 		}
 
-		var errGraph error
-		graph, errGraph = astgraph.Build(*repoPath)
+		graph, errGraph := astgraph.Build(*repoPath)
 		if errGraph != nil {
 			fmt.Fprintf(os.Stderr, "error building AST graph: %v\n", errGraph)
 			os.Exit(1)
@@ -226,12 +225,16 @@ func handleRun(args []string) {
 		changedFiles = res.ChangedFiles
 		changedFuncs = res.ChangedFunctions
 		impactedTests = res.ImpactedTests
+		testPackages = res.TestPackages
 		totalTestsInRepo = res.TotalTestsInRepo
 		testsSkipped = res.TestsSkipped
+
+		rn = runner.New(*repoPath, graph)
 
 		// Save to Redis cache
 		cClient.SetImpact(ctx, repoHash, ref1, ref2, &cache.CachedImpact{
 			ImpactedTests:    impactedTests,
+			TestPackages:     testPackages,
 			ChangedFunctions: changedFuncs,
 			ChangedFiles:     changedFiles,
 			TotalTestsInRepo: totalTestsInRepo,
@@ -239,7 +242,7 @@ func handleRun(args []string) {
 		})
 	}
 
-	analysisTime := time.Since(startTotal)
+	analysisTime := time.Since(startAnalysis)
 
 	// 2. Resolve baseline full-suite timing
 	var baselineMs int64
@@ -248,8 +251,6 @@ func handleRun(args []string) {
 			baselineMs = cachedBaseline
 		}
 	}
-
-	rn := runner.New(*repoPath, graph)
 
 	if baselineMs <= 0 {
 		fmt.Print("Computing full test suite baseline (one-time calibration)... ")
@@ -265,7 +266,7 @@ func handleRun(args []string) {
 	// Print analysis header
 	cacheLabel := "CACHE MISS"
 	if cacheHit {
-		cacheLabel = "CACHE HIT"
+		cacheLabel = "CACHE HIT (skipped AST analysis)"
 	}
 	fmt.Printf("\n=== Diffr Test Impact Run ===\n")
 	fmt.Printf("Commit Range: %s..%s (analysis: %v, %s)\n", ref1, ref2, analysisTime, cacheLabel)
@@ -294,6 +295,7 @@ func handleRun(args []string) {
 			testOutput = summary.Output
 			success = summary.Success
 		}
+		fmt.Printf("Command             : %s\n", rn.LastCommand)
 		if success {
 			fmt.Printf("✓ Tests completed successfully in %d ms.\n", actualRunMs)
 		} else {

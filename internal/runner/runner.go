@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bytes"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -24,21 +25,42 @@ type RunSummary struct {
 
 // Runner handles scoped test execution via go test.
 type Runner struct {
-	RepoDir string
-	Graph   *astgraph.Graph
+	RepoDir      string
+	Graph        *astgraph.Graph
+	TestPackages map[string]string
+	TotalTests   int
+	LastCommand  string
 }
 
 // New creates a new test runner.
 func New(repoDir string, graph *astgraph.Graph) *Runner {
+	total := 0
+	if graph != nil {
+		total = len(graph.AllTests)
+	}
 	return &Runner{
-		RepoDir: repoDir,
-		Graph:   graph,
+		RepoDir:    repoDir,
+		Graph:      graph,
+		TotalTests: total,
+	}
+}
+
+// NewFromCache creates a runner using cached package paths without re-parsing the AST.
+func NewFromCache(repoDir string, testPackages map[string]string, totalTests int) *Runner {
+	return &Runner{
+		RepoDir:      repoDir,
+		TestPackages: testPackages,
+		TotalTests:   totalTests,
 	}
 }
 
 // Run executes only the impacted tests, grouped by package, capturing wall-clock duration.
 func (r *Runner) Run(impactedTests []string) (*RunSummary, error) {
-	totalTests := len(r.Graph.AllTests)
+	totalTests := r.TotalTests
+	if r.Graph != nil && len(r.Graph.AllTests) > 0 {
+		totalTests = len(r.Graph.AllTests)
+	}
+
 	skipped := totalTests - len(impactedTests)
 	if skipped < 0 {
 		skipped = 0
@@ -60,16 +82,23 @@ func (r *Runner) Run(impactedTests []string) (*RunSummary, error) {
 	seenPkg := make(map[string]bool)
 
 	for _, testID := range impactedTests {
-		info, exists := r.Graph.Functions[testID]
 		pkgDir := "."
 		testName := testID
-		if exists {
-			pkgDir = info.PkgDir
-			testName = info.Name
+
+		if r.TestPackages != nil && r.TestPackages[testID] != "" {
+			pkgDir = r.TestPackages[testID]
+			parts := strings.Split(testID, ".")
+			testName = parts[len(parts)-1]
+		} else if r.Graph != nil {
+			if info, exists := r.Graph.Functions[testID]; exists {
+				pkgDir = info.PkgDir
+				testName = info.Name
+			}
 		} else {
 			parts := strings.Split(testID, ".")
 			testName = parts[len(parts)-1]
 		}
+
 		allTestNames = append(allTestNames, testName)
 
 		pkgTarget := "./" + filepath.ToSlash(pkgDir)
@@ -84,9 +113,11 @@ func (r *Runner) Run(impactedTests []string) (*RunSummary, error) {
 
 	regexPattern := "^(" + strings.Join(allTestNames, "|") + ")$"
 	args := append([]string{"test", "-v", "-run", regexPattern}, pkgTargets...)
+	r.LastCommand = "go " + strings.Join(args, " ")
 
+	goBin := findGoBinary()
 	startTotal := time.Now()
-	cmd := exec.Command("go", args...)
+	cmd := exec.Command(goBin, args...)
 	if r.RepoDir != "" {
 		cmd.Dir = r.RepoDir
 	}
@@ -110,7 +141,8 @@ func (r *Runner) Run(impactedTests []string) (*RunSummary, error) {
 
 // RunBaseline runs the full test suite (go test ./...) to compute the baseline execution time in ms.
 func (r *Runner) RunBaseline() (int64, error) {
-	cmd := exec.Command("go", "test", "./...")
+	goBin := findGoBinary()
+	cmd := exec.Command(goBin, "test", "./...")
 	if r.RepoDir != "" {
 		cmd.Dir = r.RepoDir
 	}
@@ -126,4 +158,28 @@ func (r *Runner) RunBaseline() (int64, error) {
 		durationMs = 1
 	}
 	return durationMs, nil
+}
+
+func findGoBinary() string {
+	if p, err := exec.LookPath("go"); err == nil {
+		return p
+	}
+	if goroot := os.Getenv("GOROOT"); goroot != "" {
+		candidate := filepath.Join(goroot, "bin", "go.exe")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	commonPaths := []string{
+		`C:\Program Files\Go\bin\go.exe`,
+		`C:\Go\bin\go.exe`,
+		`/usr/local/go/bin/go`,
+		`/usr/bin/go`,
+	}
+	for _, cp := range commonPaths {
+		if _, err := os.Stat(cp); err == nil {
+			return cp
+		}
+	}
+	return "go"
 }

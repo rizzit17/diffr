@@ -60,6 +60,29 @@ diff --git a/service/user.go b/service/user.go
 `,
 			want: nil,
 		},
+		{
+			name: "brand new Go file with no prior version",
+			diff: `diff --git a/newpkg/feature.go b/newpkg/feature.go
+new file mode 100644
+index 0000000..abcdef1
+--- /dev/null
++++ b/newpkg/feature.go
+@@ -0,0 +1,25 @@
++package newpkg
++
++func NewFeature() string {
++	return "ok"
++}
+`,
+			want: []ChangedFile{
+				{
+					Path: "newpkg/feature.go",
+					Lines: []LineRange{
+						{Start: 1, End: 25},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {

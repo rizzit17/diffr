@@ -32,11 +32,12 @@ func init() {
 
 // CachedImpact holds the cached analysis results for a commit pair.
 type CachedImpact struct {
-	ImpactedTests    []string `json:"impacted_tests"`
-	ChangedFunctions []string `json:"changed_functions"`
-	ChangedFiles     []string `json:"changed_files"`
-	TotalTestsInRepo int      `json:"total_tests_in_repo"`
-	TestsSkipped     int      `json:"tests_skipped"`
+	ImpactedTests    []string          `json:"impacted_tests"`
+	TestPackages     map[string]string `json:"test_packages,omitempty"`
+	ChangedFunctions []string          `json:"changed_functions"`
+	ChangedFiles     []string          `json:"changed_files"`
+	TotalTestsInRepo int               `json:"total_tests_in_repo"`
+	TestsSkipped     int               `json:"tests_skipped"`
 }
 
 // Client wraps a Redis client with resilient cache operations.
@@ -56,13 +57,13 @@ func New(addr string) *Client {
 
 	rdb := redis.NewClient(&redis.Options{
 		Addr:         addr,
-		DialTimeout:  200 * time.Millisecond,
-		ReadTimeout:  200 * time.Millisecond,
-		WriteTimeout: 200 * time.Millisecond,
+		DialTimeout:  30 * time.Millisecond,
+		ReadTimeout:  30 * time.Millisecond,
+		WriteTimeout: 30 * time.Millisecond,
 		MaxRetries:   0,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Millisecond)
 	defer cancel()
 
 	available := true
@@ -83,7 +84,23 @@ func ComputeRepoHash(repoPath string) string {
 		absPath = repoPath
 	}
 
-	// Try git remote get-url origin
+	// Try reading .git/config directly first for zero-overhead hash calculation
+	gitConfigPath := filepath.Join(absPath, ".git", "config")
+	if data, err := os.ReadFile(gitConfigPath); err == nil {
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "url =") {
+				url := strings.TrimSpace(strings.TrimPrefix(line, "url ="))
+				if url != "" {
+					hash := sha256.Sum256([]byte(url))
+					return hex.EncodeToString(hash[:])[:12]
+				}
+			}
+		}
+	}
+
+	// Fallback to git remote get-url origin
 	cmd := exec.Command("git", "remote", "get-url", "origin")
 	cmd.Dir = absPath
 	out, err := cmd.Output()
@@ -106,67 +123,88 @@ func baselineKey(repoHash string) string {
 
 // GetImpact attempts to retrieve cached impact analysis for the commit pair.
 func (c *Client) GetImpact(ctx context.Context, repoHash, ref1, ref2 string) (*CachedImpact, bool) {
-	if !c.available || c.rdb == nil {
-		return nil, false
+	if c.available && c.rdb != nil {
+		key := impactKey(repoHash, ref1, ref2)
+		val, err := c.rdb.Get(ctx, key).Result()
+		if err == nil {
+			var cached CachedImpact
+			if err := json.Unmarshal([]byte(val), &cached); err == nil {
+				return &cached, true
+			}
+		}
 	}
 
-	key := impactKey(repoHash, ref1, ref2)
-	val, err := c.rdb.Get(ctx, key).Result()
-	if err != nil {
-		return nil, false
+	// Local disk fallback
+	safeRef1 := strings.ReplaceAll(ref1, "/", "_")
+	safeRef2 := strings.ReplaceAll(ref2, "/", "_")
+	fallbackPath := filepath.Join(".diffr", fmt.Sprintf("cache_%s_%s_%s.json", repoHash, safeRef1, safeRef2))
+	if data, err := os.ReadFile(fallbackPath); err == nil {
+		var cached CachedImpact
+		if err := json.Unmarshal(data, &cached); err == nil {
+			return &cached, true
+		}
 	}
 
-	var cached CachedImpact
-	if err := json.Unmarshal([]byte(val), &cached); err != nil {
-		return nil, false
-	}
-
-	return &cached, true
+	return nil, false
 }
 
 // SetImpact saves the resolved impact results with a 24h TTL.
 func (c *Client) SetImpact(ctx context.Context, repoHash, ref1, ref2 string, impact *CachedImpact) {
-	if !c.available || c.rdb == nil {
-		return
-	}
-
 	data, err := json.Marshal(impact)
 	if err != nil {
 		return
 	}
 
-	key := impactKey(repoHash, ref1, ref2)
-	_ = c.rdb.Set(ctx, key, data, DefaultImpactTTL).Err()
+	if c.available && c.rdb != nil {
+		key := impactKey(repoHash, ref1, ref2)
+		_ = c.rdb.Set(ctx, key, data, DefaultImpactTTL).Err()
+	}
+
+	// Always write local disk fallback so repeated runs without Redis stay sub-millisecond
+	_ = os.MkdirAll(".diffr", 0755)
+	safeRef1 := strings.ReplaceAll(ref1, "/", "_")
+	safeRef2 := strings.ReplaceAll(ref2, "/", "_")
+	fallbackPath := filepath.Join(".diffr", fmt.Sprintf("cache_%s_%s_%s.json", repoHash, safeRef1, safeRef2))
+	_ = os.WriteFile(fallbackPath, data, 0644)
 }
 
 // GetBaseline retrieves the cached full-suite baseline execution time in ms.
 func (c *Client) GetBaseline(ctx context.Context, repoHash string) (int64, bool) {
-	if !c.available || c.rdb == nil {
-		return 0, false
+	if c.available && c.rdb != nil {
+		key := baselineKey(repoHash)
+		val, err := c.rdb.Get(ctx, key).Result()
+		if err == nil {
+			ms, err := strconv.ParseInt(val, 10, 64)
+			if err == nil {
+				return ms, true
+			}
+		}
 	}
 
-	key := baselineKey(repoHash)
-	val, err := c.rdb.Get(ctx, key).Result()
-	if err != nil {
-		return 0, false
+	// Local fallback file
+	fallbackPath := filepath.Join(".diffr", fmt.Sprintf("baseline_%s.txt", repoHash))
+	if data, err := os.ReadFile(fallbackPath); err == nil {
+		ms, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+		if err == nil {
+			return ms, true
+		}
 	}
 
-	ms, err := strconv.ParseInt(val, 10, 64)
-	if err != nil {
-		return 0, false
-	}
-
-	return ms, true
+	return 0, false
 }
 
 // SetBaseline stores the full-suite baseline execution time with a 7-day TTL.
 func (c *Client) SetBaseline(ctx context.Context, repoHash string, ms int64) {
-	if !c.available || c.rdb == nil {
-		return
+	val := strconv.FormatInt(ms, 10)
+	if c.available && c.rdb != nil {
+		key := baselineKey(repoHash)
+		_ = c.rdb.Set(ctx, key, val, DefaultBaselineTTL).Err()
 	}
 
-	key := baselineKey(repoHash)
-	_ = c.rdb.Set(ctx, key, strconv.FormatInt(ms, 10), DefaultBaselineTTL).Err()
+	// Always write local fallback
+	_ = os.MkdirAll(".diffr", 0755)
+	fallbackPath := filepath.Join(".diffr", fmt.Sprintf("baseline_%s.txt", repoHash))
+	_ = os.WriteFile(fallbackPath, []byte(val), 0644)
 }
 
 // Close closes the underlying Redis connection pool.
