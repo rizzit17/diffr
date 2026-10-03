@@ -1,0 +1,59 @@
+# Designed deployment target, not exercised in this environment.
+# Architecture note: Parameterized Kubernetes Job intended to run as a CI gate
+# step in a cloud-native pipeline (e.g. Harness CI step or Argo Workflows).
+# Analyzes changed code between REF1 and REF2 and executes only impacted tests.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: diffr-ci-job
+  labels:
+    app.kubernetes.io/name: diffr
+    app.kubernetes.io/component: ci-runner
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: diffr-ci-job
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: diffr-runner
+          image: diffr:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "diffr run ${REF1:-HEAD~1} ${REF2:-HEAD} -repo ${REPO_PATH:-/workspace}"
+          env:
+            - name: REF1
+              value: "HEAD~1"
+            - name: REF2
+              value: "HEAD"
+            - name: REPO_PATH
+              value: "/workspace"
+            - name: REDIS_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: diffr-config
+                  key: redis_addr
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: diffr-secrets
+                  key: mongo_uri
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+          volumeMounts:
+            - name: workspace-volume
+              mountPath: /workspace
+      volumes:
+        - name: workspace-volume
+          emptyDir: {}
