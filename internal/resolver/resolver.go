@@ -10,11 +10,12 @@ import (
 
 // Result holds the resolved impact analysis data.
 type Result struct {
-	ChangedFiles      []string `json:"changed_files"`
-	ChangedFunctions  []string `json:"changed_functions"`
-	ImpactedTests     []string `json:"impacted_tests"`
-	TotalTestsInRepo  int      `json:"total_tests_in_repo"`
-	TestsSkipped      int      `json:"tests_skipped"`
+	ChangedFiles      []string          `json:"changed_files"`
+	ChangedFunctions  []string          `json:"changed_functions"`
+	ImpactedTests     []string          `json:"impacted_tests"`
+	TestPackages      map[string]string `json:"test_packages"`
+	TotalTestsInRepo  int               `json:"total_tests_in_repo"`
+	TestsSkipped      int               `json:"tests_skipped"`
 }
 
 // Resolver resolves impacted tests from changed functions and files.
@@ -91,10 +92,18 @@ func (r *Resolver) Resolve(changedFiles []diffengine.ChangedFile, changedFuncs [
 		testsSkipped = 0
 	}
 
+	testPackages := make(map[string]string)
+	for _, testID := range impactedTests {
+		if fn, exists := r.Graph.Functions[testID]; exists {
+			testPackages[testID] = fn.PkgDir
+		}
+	}
+
 	return &Result{
 		ChangedFiles:     changedFilePaths,
 		ChangedFunctions: changedFuncs,
 		ImpactedTests:    impactedTests,
+		TestPackages:     testPackages,
 		TotalTestsInRepo: totalTests,
 		TestsSkipped:     testsSkipped,
 	}

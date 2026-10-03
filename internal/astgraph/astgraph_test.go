@@ -27,10 +27,10 @@ func TestBuildCallGraph(t *testing.T) {
 		expectIsTest bool
 	}{
 		{
-			name:         "top-level function Add",
+			name:         "top-level function Add called within package and across packages",
 			funcID:       "calc.Add",
 			wantCallees:  nil,
-			wantCallers:  []string{"calc.TestAdd", "calc.(*Calculator).Compute"},
+			wantCallers:  []string{"calc.TestAdd", "calc.(*Calculator).Compute", "service.ExecuteOperation"},
 			expectIsTest: false,
 		},
 		{
@@ -51,6 +51,20 @@ func TestBuildCallGraph(t *testing.T) {
 			name:         "test function TestCompute calling method Compute",
 			funcID:       "calc.TestCompute",
 			wantCallees:  []string{"calc.(*Calculator).Compute"},
+			wantCallers:  nil,
+			expectIsTest: true,
+		},
+		{
+			name:         "cross-package function ExecuteOperation calling calc.Add",
+			funcID:       "service.ExecuteOperation",
+			wantCallees:  []string{"calc.Add"},
+			wantCallers:  []string{"service.TestExecuteOperation"},
+			expectIsTest: false,
+		},
+		{
+			name:         "cross-package test TestExecuteOperation calling ExecuteOperation",
+			funcID:       "service.TestExecuteOperation",
+			wantCallees:  []string{"service.ExecuteOperation"},
 			wantCallers:  nil,
 			expectIsTest: true,
 		},
@@ -115,6 +129,42 @@ func TestMapChangedFunctions(t *testing.T) {
 				},
 			},
 			wantFuncs: []string{"calc.Add"},
+		},
+		{
+			name: "exact first line of Add function boundary",
+			changedFiles: []diffengine.ChangedFile{
+				{
+					Path: addInfo.File,
+					Lines: []diffengine.LineRange{
+						{Start: addInfo.StartLine, End: addInfo.StartLine},
+					},
+				},
+			},
+			wantFuncs: []string{"calc.Add"},
+		},
+		{
+			name: "exact last line (closing brace) of Add function boundary",
+			changedFiles: []diffengine.ChangedFile{
+				{
+					Path: addInfo.File,
+					Lines: []diffengine.LineRange{
+						{Start: addInfo.EndLine, End: addInfo.EndLine},
+					},
+				},
+			},
+			wantFuncs: []string{"calc.Add"},
+		},
+		{
+			name: "one line after Add function boundary",
+			changedFiles: []diffengine.ChangedFile{
+				{
+					Path: addInfo.File,
+					Lines: []diffengine.LineRange{
+						{Start: addInfo.EndLine + 1, End: addInfo.EndLine + 1},
+					},
+				},
+			},
+			wantFuncs: nil,
 		},
 		{
 			name: "line range outside all functions (e.g. package comment)",

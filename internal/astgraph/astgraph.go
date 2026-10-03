@@ -211,10 +211,17 @@ func Build(repoDir string) (*Graph, error) {
 					targetName := fun.Sel.Name
 					if ident, ok := fun.X.(*ast.Ident); ok {
 						// Subcase: imported package function call, e.g. math.Add
-						if _, isImport := fa.imports[ident.Name]; isImport {
+						if importPath, isImport := fa.imports[ident.Name]; isImport {
 							importedTarget := ident.Name + "." + targetName
 							if _, exists := g.Functions[importedTarget]; exists {
 								calleeSet[importedTarget] = true
+							} else {
+								parts := strings.Split(importPath, "/")
+								lastPkg := parts[len(parts)-1]
+								altTarget := lastPkg + "." + targetName
+								if _, exists := g.Functions[altTarget]; exists {
+									calleeSet[altTarget] = true
+								}
 							}
 						} else {
 							// Subcase: method invocation on variable, e.g. c.Compute()

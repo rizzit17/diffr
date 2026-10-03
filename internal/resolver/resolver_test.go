@@ -30,10 +30,10 @@ func TestResolver_Resolve(t *testing.T) {
 		wantSkippedTests  int
 	}{
 		{
-			name:              "change in Add impacts TestAdd directly and TestCompute via Compute method",
+			name:              "change in Add impacts TestAdd directly, TestCompute via Compute, and TestExecuteOperation across packages",
 			changedFiles:      []diffengine.ChangedFile{{Path: "calc/calc.go"}},
 			changedFuncs:      []string{"calc.Add"},
-			wantImpactedTests: []string{"calc.TestAdd", "calc.TestCompute"},
+			wantImpactedTests: []string{"calc.TestAdd", "calc.TestCompute", "service.TestExecuteOperation"},
 			wantSkippedTests:  1, // TestUnusedDirect is skipped
 		},
 		{
@@ -41,22 +41,22 @@ func TestResolver_Resolve(t *testing.T) {
 			changedFiles:      []diffengine.ChangedFile{{Path: "calc/calc.go"}},
 			changedFuncs:      []string{"calc.Multiply"},
 			wantImpactedTests: []string{"calc.TestCompute"},
-			wantSkippedTests:  2, // TestAdd and TestUnusedDirect are skipped
+			wantSkippedTests:  3, // TestAdd, TestUnusedDirect, and TestExecuteOperation skipped
 		},
 		{
 			name:              "change in Unused impacts only TestUnusedDirect",
 			changedFiles:      []diffengine.ChangedFile{{Path: "calc/calc.go"}},
 			changedFuncs:      []string{"calc.Unused"},
 			wantImpactedTests: []string{"calc.TestUnusedDirect"},
-			wantSkippedTests:  2,
+			wantSkippedTests:  3,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := res.Resolve(tt.changedFiles, tt.changedFuncs)
-			if result.TotalTestsInRepo != 3 {
-				t.Errorf("TotalTestsInRepo = %d, want 3", result.TotalTestsInRepo)
+			if result.TotalTestsInRepo != 4 {
+				t.Errorf("TotalTestsInRepo = %d, want 4", result.TotalTestsInRepo)
 			}
 			if result.TestsSkipped != tt.wantSkippedTests {
 				t.Errorf("TestsSkipped = %d, want %d", result.TestsSkipped, tt.wantSkippedTests)
