@@ -203,14 +203,14 @@ diffr/
 
 ### 5.1 Known Limitations & Architectural Tradeoffs
 
-1. **Inline Baseline Calibration on Cold Path (First Run Overhead)**:
-   - *Design Decision*: When Diffr runs on a brand new repository or after baseline cache expiry (7-day TTL), it executes the full test suite (`RunBaseline()`) inline before executing scoped tests.
-   - *The Tradeoff*: The first-ever PR run pays the calibration cost once (e.g., full suite run + scoped run). An alternative would require an external pre-flight CI step or scheduled cron to populate `diffr:baseline:{repoHash}`. Diffr chooses inline execution to guarantee **zero-configuration adoption** for downstream repositories, making this one-time calibration overhead explicit in the PR comment breakdown (`One-Time Calibration Overhead: X ms`, `Scoped Test Run Time: Y ms`) rather than hiding it or skewing savings.
-2. **Runtime Regressions & Negative Time Savings**:
-   - *Design Decision*: If a code change or runner noise introduces latency (e.g., deadlock, sleep, un-indexed query, or CI runner CPU throttling) such that `actualRunMs > baselineMs`, Diffr does **not** silently zero the delta (`0 ms saved`).
-   - *The Safeguard*: The CLI logs an explicit warning (`⚠️ -X ms slower than baseline`), and the PR comment displays `⚠️ -X ms (slower than baseline)` alongside an actionable alert callout warning the developer of potential performance regressions.
+1. **Inline Baseline Calibration on Cold Path (Zero-Config Adoption vs. First-Run Overhead)**:
+   - *Design Choice*: When Diffr executes on a new repository or after cache expiration (7-day TTL), it calibrates the baseline full-suite runtime (`RunBaseline()`) inline during the first execution.
+   - *Engineering Rationale*: While requiring an external pre-flight setup job or scheduled cron could pre-populate `diffr:baseline:{repoHash}`, inline calibration delivers zero-configuration, drop-in adoption for any CI workflow. The initial PR pays the full suite runtime once; every subsequent commit operates on pure scoped execution time. Diffr surfaces this design choice explicitly in the PR comment by splitting `One-Time Calibration Overhead` from `Scoped Test Run Time` to maintain metric integrity.
+2. **Operational Honesty on Runtime Regressions**:
+   - *Design Choice*: If code changes or runner contention cause scoped tests to execute slower than the baseline full suite (`actualRunMs > baselineMs`), Diffr intentionally avoids zeroing or clamping the calculation.
+   - *Engineering Rationale*: A TIA engine that silently clamps negative savings masks introduced latencies, un-indexed queries, or deadlocks. Diffr surfaces an explicit `⚠️ -X ms (slower than baseline)` in the PR comment and CLI, paired with actionable investigation guidance.
 3. **Syntactic Call Graph Boundaries**:
-   - Dynamic interface invocations without concrete type definitions remain conservative boundaries (interfaces fall through safely rather than guessing or panicking).
+   - Interface method dispatch without concrete type inference represents an intentional conservative boundary: interface calls fall through gracefully rather than incurring heavy whole-program compiler typechecking or panicking.
 
 ---
 
@@ -430,5 +430,5 @@ jobs:
 
 > **Why Compute Savings Showed 0 ms in Uncalibrated First Runs:**
 > 1. **Timing Skew Across Test Packages**: The 7 skipped tests reside in `testdata/fixture` and execute in sub-millisecond time. In contrast, the 16 executed tests span core engine packages containing heavy integration tests (`miniredis` server launch in `internal/cache` taking ~3.2s, local disk fallback in `internal/store` taking ~0.5s). Thus, the 16 executed tests account for ~98% of the suite's runtime.
-> 2. **Baseline Calibration Isolation**: On first-ever repository runs where the baseline cache is empty, Diffr measures full-suite runtime (`6252 ms`) inline and persists it for 7 days. By isolating **One-Time Calibration Overhead** from **Scoped Test Run Time**, PR comments clearly distinguish one-time setup from steady-state savings (which show **5652 ms / 90.4% savings** on subsequent runs once cached).
+> 2. **Baseline Calibration Isolation**: On first-ever repository runs where the baseline cache is empty, Diffr measures full-suite runtime (`6252 ms` cold build) inline and persists it for 7 days. By isolating **One-Time Calibration Overhead** from **Scoped Test Run Time**, PR comments cleanly separate initial setup from steady-state savings (**376 ms / 44.1% savings**, as demonstrated in Case A).
 
