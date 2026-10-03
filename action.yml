@@ -1,0 +1,100 @@
+name: "Diffr Test Impact Analysis"
+description: "Smart Test Impact Analysis for Go: runs only tests impacted by pull request changes."
+author: "Diffr"
+branding:
+  icon: "zap"
+  color: "green"
+
+inputs:
+  github-token:
+    description: "GitHub Token for posting PR comments"
+    required: false
+    default: ${{ github.token }}
+  base-ref:
+    description: "Base git ref to diff against (e.g. main or origin/main)"
+    required: false
+    default: ${{ github.base_ref }}
+  head-ref:
+    description: "Head git ref (e.g. HEAD)"
+    required: false
+    default: "HEAD"
+  comment-pr:
+    description: "Post a PR comment with test impact metrics"
+    required: false
+    default: "true"
+  repo-path:
+    description: "Path to git repository"
+    required: false
+    default: "."
+
+outputs:
+  tests-executed:
+    description: "Number of impacted tests executed"
+    value: ${{ steps.diffr-run.outputs.tests-executed }}
+  tests-total:
+    description: "Total number of tests discovered in repository"
+    value: ${{ steps.diffr-run.outputs.tests-total }}
+  pct-time-saved:
+    description: "Percentage of test execution time saved"
+    value: ${{ steps.diffr-run.outputs.pct-time-saved }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Go environment
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: "${{ inputs.repo-path }}/go.mod"
+        cache: false
+
+    - name: Fetch base branch for diff analysis
+      shell: bash
+      run: |
+        BASE="${{ inputs.base-ref }}"
+        if [ -z "$BASE" ]; then
+          BASE="main"
+        fi
+        echo "Fetching base ref origin/$BASE..."
+        git fetch origin "$BASE" --depth=50 || git fetch origin "$BASE" || true
+
+    - name: Build Diffr CLI
+      shell: bash
+      run: |
+        mkdir -p .diffr-bin
+        go build -o .diffr-bin/diffr "${{ inputs.repo-path }}/cmd/diffr"
+
+    - name: Run Diffr Impact Analysis
+      id: diffr-run
+      shell: bash
+      run: |
+        BASE="${{ inputs.base-ref }}"
+        if [ -z "$BASE" ]; then
+          BASE="main"
+        fi
+
+        # Resolve target git ref (handle origin/ prefix)
+        TARGET_BASE="origin/$BASE"
+        if ! git rev-parse --verify "$TARGET_BASE" >/dev/null 2>&1; then
+          TARGET_BASE="$BASE"
+        fi
+
+        echo "Running Diffr on range: $TARGET_BASE..${{ inputs.head-ref }}"
+        ./.diffr-bin/diffr run -repo "${{ inputs.repo-path }}" -comment-file diffr-comment.md "$TARGET_BASE" "${{ inputs.head-ref }}"
+
+        if [ -n "$GITHUB_STEP_SUMMARY" ] && [ -f diffr-comment.md ]; then
+          cat diffr-comment.md >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Post PR Comment
+      if: inputs.comment-pr == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        if [ -f diffr-comment.md ] && [ -n "$PR_NUMBER" ] && [ -n "$GITHUB_TOKEN" ]; then
+          echo "Posting PR comment to pull request #$PR_NUMBER..."
+          gh pr comment "$PR_NUMBER" --body-file diffr-comment.md || \
+          gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" -f body="$(cat diffr-comment.md)" || \
+          echo "Warning: unable to post PR comment (verify workflow has pull-requests: write permission)"
+        fi

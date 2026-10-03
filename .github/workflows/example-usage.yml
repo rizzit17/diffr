@@ -1,0 +1,26 @@
+name: Test Impact Analysis
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  impact-analysis:
+    name: Run Impacted Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full git history required for base/head diff calculation
+
+      - name: Run Diffr Impact Analysis
+        uses: ./ # When used inside Diffr repo, or 'rizzit17/diffr@main' in consumer repos
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          base-ref: ${{ github.base_ref }}
+          comment-pr: 'true'
