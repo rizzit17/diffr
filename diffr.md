@@ -7,14 +7,14 @@
 
 ## 1. Executive Summary
 
-**Diffr** is a high-performance Go-based **Test Impact Analysis (TIA)** engine and observability dashboard. It eliminates redundant test execution in CI/CD pipelines by analyzing syntactic code diffs between two Git references, building a function-level reverse call graph from Go ASTs, calculating transitively impacted tests via Breadth-First Search (BFS), and executing only the scoped test subset.
+**Diffr** is a Go-based **Test Impact Analysis (TIA)** CLI and observability dashboard. It eliminates redundant test execution in CI/CD pipelines by analyzing syntactic code diffs between two Git references, building a function-level reverse call graph from Go ASTs, calculating transitively impacted tests via Breadth-First Search (BFS), and executing only the scoped test subset.
 
 ### Key Metrics & Performance
-- **Test Execution Reduction**: Typically **40% to 100%** fewer tests executed per commit.
-- **Analysis Latency**:
-  - **Cache Miss (Full AST + BFS)**: ~50ms – 300ms across typical codebases.
-  - **Cache Hit (Redis / Local Fallback)**: **< 1ms** (sub-millisecond retrieval, bypassing AST parsing entirely).
-- **Zero Heavy Dependencies**: Written using the Go standard library (`go/parser`, `go/ast`, `net/http`) plus lightweight drivers for Redis and MongoDB.
+- **Test Execution Reduction**: Typically **40% to 100%** fewer tests executed per commit (e.g., 8 of 14 tests run on internal store changes).
+- **Analysis Latency (Measured)**:
+  - **Cache Miss (Full AST + BFS)**: **55.2ms – 62.6ms** (live local runs).
+  - **Cache Hit (Redis / Local Fallback)**: **504µs – 652µs** (sub-millisecond retrieval, bypassing AST parsing entirely).
+- **Stdlib-First Design**: Uses Go standard library packages (`go/parser`, `go/ast`, `net/http`) for parsing, diffing, and serving, paired with two established client drivers for persistence: `go-redis/v9` (caching) and `mongo-driver/v2` (telemetry).
 
 ---
 
@@ -193,11 +193,11 @@ diffr/
 | **AST / Call Graph** | Interface dispatch causing panics | Unresolved `*ast.SelectorExpr` falls through safely without runtime panics | Tested across complex selector expressions |
 | **Diff Engine** | Brand new file with no prior version | Handles `--- /dev/null` and `@@ -0,0 +1,N @@` without index out of bounds | Tested in `TestParseUnifiedDiff` & verified on live commit adding new files |
 | **Diff Engine** | Off-by-one errors at function boundaries | Inclusive line range check `!(lr.End < fn.StartLine \|\| lr.Start > fn.EndLine)` | Verified on `StartLine`, `EndLine` (closing brace), and `EndLine + 1` |
-| **Cache Layer** | Re-building AST on cache hit | `CachedImpact` includes `TestPackages` mapping; `runner.NewFromCache` executes directly | Live log verified: analysis drops from **55ms** to **503µs** |
+| **Cache Layer** | Re-building AST on cache hit | `CachedImpact` includes `TestPackages` mapping; `runner.NewFromCache` executes directly | Live log verified: `run` analysis drops from **62.6ms** to **504.8µs**; `diff` drops from **55.3ms** to **504.3µs** |
 | **Cache Layer** | Cache key collisons / TTL mismatch | Exact key schemas `diffr:{repoHash}:{ref1}:{ref2}` (24h) and `diffr:baseline:{repoHash}` (7d) | Verified against specification in `system-design.md` |
 | **Test Runner** | Global `./...` shortcut defeating scoping | Maps tests to package directories; executes only affected package paths | Command logging verifies `go test -v -run ^(...) <pkg1> <pkg2>` |
 | **Test Runner** | Baseline recomputed on every run | Baseline stored in Redis / file; retrieved in 0ms on subsequent runs | Live runs demonstrate single one-time calibration |
-| **MongoDB** | Missing index declarations | Compound and descending indexes created during connection initialization | Live test `TestLiveMongoIndexes` verifies physical index existence |
+| **MongoDB** | Missing index declarations | Compound and descending indexes created during connection initialization | Verified conditionally via `TestLiveMongoIndexes`: queries `collection.Indexes().List()` when MongoDB is up on `127.0.0.1:27017` (skips cleanly with `t.Skip` if offline) |
 | **Dashboard** | Silent fallback to fake mock data | UI directly calls `/api/runs` and renders live MongoDB data or explicit empty state | Verified in `app.js` and live HTTP response |
 
 ---
@@ -245,7 +245,15 @@ Starts the web dashboard and REST API server.
 - [x] MongoDB persistence layer with compound indexes.
 - [x] Go standard library REST API server.
 - [x] Clean dark-mode dashboard with real-time Canvas visualization.
-- [x] Comprehensive unit and integration test coverage across all internal packages.
+- [x] Test coverage across `internal/` packages: **68.1% of statements** (`go test -cover ./internal/...`):
+  - `internal/astgraph`: **87.9%** (AST parsing, receiver types, edge extraction)
+  - `internal/resolver`: **87.3%** (BFS reverse graph traversal, transitive propagation)
+  - `internal/store`: **74.7%** (MongoDB persistence, aggregation, local JSON fallback)
+  - `internal/diffengine`: **67.6%** (Unified diff parser, chunk & boundary mapping)
+  - `internal/api`: **64.3%** (HTTP server routes, CORS, JSON response contracts)
+  - `internal/runner`: **64.3%** (Scoped `-run` argument builder, Go binary resolution)
+  - `internal/cache`: **14.9%** (Key format & hashing; live Redis I/O and fallbacks not exercised in unit tests)
+  - `cmd/diffr`: **0.0%** (CLI flags/dispatch; exercised via integration runs)
 - [x] Production Dockerfile and Kubernetes deployment manifests.
 
 ### Recommended Next Features & Extensibility

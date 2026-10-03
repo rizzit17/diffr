@@ -243,6 +243,10 @@ func handleRun(args []string) {
 	}
 
 	analysisTime := time.Since(startAnalysis)
+	analysisDisplay := fmt.Sprintf("%v", analysisTime)
+	if analysisTime == 0 {
+		analysisDisplay = "< 1ms"
+	}
 
 	// 2. Resolve baseline full-suite timing
 	var baselineMs int64
@@ -269,7 +273,7 @@ func handleRun(args []string) {
 		cacheLabel = "CACHE HIT (skipped AST analysis)"
 	}
 	fmt.Printf("\n=== Diffr Test Impact Run ===\n")
-	fmt.Printf("Commit Range: %s..%s (analysis: %v, %s)\n", ref1, ref2, analysisTime, cacheLabel)
+	fmt.Printf("Commit Range: %s..%s (analysis: %s, %s)\n", ref1, ref2, analysisDisplay, cacheLabel)
 	printImpactSummary(changedFiles, changedFuncs, impactedTests, totalTestsInRepo, testsSkipped)
 
 	// 3. Execute scoped tests
