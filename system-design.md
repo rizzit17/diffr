@@ -103,8 +103,8 @@ No auth in v1 (explicitly out of scope per PRD — localhost/demo tool only).
 
 ## 4. Scalability notes (for interview framing, not for this build)
 - Call graph construction is the only O(n)-over-whole-repo step; everything else is O(1)
-  cache lookups or O(impacted set) test execution — this is the same shape Harness's real
-  Test Intelligence uses at much larger scale (precomputed dependency graphs, incremental
+  cache lookups or O(impacted set) test execution — this follows the same design principle
+  enterprise test impact platforms use at much larger scale (precomputed dependency graphs, incremental
   updates rather than full rebuilds per commit).
 - A real production version would persist the call graph itself (not just results) and
   update it incrementally per commit rather than rebuilding from scratch — worth mentioning

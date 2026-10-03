@@ -1,17 +1,15 @@
 # context.md — Project Context for Antigravity
 
 ## Who this is for
-Abhi, an Information Technology undergrad (VIT Vellore), building this project specifically
-to strengthen an application for a **Software Engineer role at Harness** (AI Software Delivery
-Platform company). Harness's flagship product category is CI/CD + "Test Intelligence" —
+Abhi, an Information Technology undergrad (VIT Vellore), building this project as a systems
+engineering showcase around **Test Impact Analysis (TIA) and CI/CD developer tooling** —
 skipping redundant tests in CI by understanding which tests are actually impacted by a code
-change. This project is a small, honest, working re-implementation of that core idea.
+change. This project is a focused, working implementation of that core idea.
 
 ## Why this stack
-The Harness JD explicitly lists: **Golang, Java, Docker, Kubernetes, MongoDB, GCP, Redis**,
-plus "understanding of distributed resilient software" and comfort diagnosing problems in a
-distributed computing environment. This project is deliberately built with that exact stack
-so it reads as direct, provable evidence of JD-relevant skill — not a generic CRUD app.
+The stack utilizes: **Golang, Docker, Kubernetes, MongoDB, Redis**, focusing on
+distributed resilient software patterns and low-latency developer infrastructure.
+This project is built to demonstrate real-world systems engineering and developer tooling skill.
 
 ## Build constraint
 Must be buildable **end-to-end in 2–3 hours** using Antigravity (agentic AI coding tool).

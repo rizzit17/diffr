@@ -1,6 +1,6 @@
 # Designed deployment target, not exercised in this environment.
 # Architecture note: Parameterized Kubernetes Job intended to run as a CI gate
-# step in a cloud-native pipeline (e.g. Harness CI step or Argo Workflows).
+# step in a cloud-native pipeline (e.g. Argo Workflows, Tekton, or runner pods).
 # Analyzes changed code between REF1 and REF2 and executes only impacted tests.
 
 apiVersion: batch/v1

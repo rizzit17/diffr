@@ -2,9 +2,9 @@
 
 ## 1. Problem
 CI pipelines re-run entire test suites on every commit, even when a change touches one
-function in one package. This wastes compute and slows feedback loops. Harness's Test
-Intelligence product solves this at enterprise scale; Diffr solves a focused version of
-the same problem for a single Go repository.
+function in one package. This wastes compute and slows feedback loops. Test Impact
+Analysis (TIA) solves this at scale; Diffr implements a clean, focused version of
+the same core concept for a single Go repository.
 
 ## 2. Goal
 Given two git refs (e.g. `HEAD~1` and `HEAD`), determine the minimal set of Go test
@@ -45,16 +45,16 @@ a full suite run — with results cached and logged for repeat analysis.
       "cache hit" and near-zero analysis latency)
 - [ ] MongoDB has at least 2 real run documents after a demo
 - [ ] Dashboard loads and shows real numbers, not mocked data
-- [ ] README has a 30-second "what this is and why" section referencing the Harness JD
-      alignment, for interview prep
+- [ ] README has a 30-second "what this is and why" section explaining the
+      architecture and motivation
 
 ## 7. Demo script (for interview / video)
 1. Make a trivial change to one function in the demo repo.
 2. Run `diffr run` — show it selecting ~2 of 40 tests, not all 40.
 3. Run it again unchanged — show Redis cache hit, near-instant.
 4. Open dashboard — show cumulative time saved trending up.
-5. One sentence: "This is a small version of what Harness's Test Intelligence does at scale
-   — I wanted to actually build the core algorithm, not just describe it."
+5. One sentence: "This implements the core Test Impact Analysis algorithm to eliminate
+   redundant CI runs using syntactic AST call graphs."
 
 ## 8. Metrics to report on resume/interview
 - % test suite reduction on typical single-function changes (target: demonstrate ≥60%)

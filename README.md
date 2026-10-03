@@ -4,9 +4,9 @@
 
 ---
 
-## Why Diffr (Harness Alignment)
+## Background & Motivation
 
-Built specifically to explore the core mechanics behind **Test Intelligence**—the category pioneered by Harness to eliminate redundant test execution in CI pipelines. Running an entire test suite on every single-line commit wastes compute, throttles developer throughput, and slows deployment cycles. Diffr proves the underlying algorithm in Go: parse syntactic deltas, trace caller-callee hierarchies through reverse call graphs, prune non-impacted tests with high fidelity, and maintain low-overhead caching and telemetry across distributed pipeline runs.
+In modern continuous integration (CI) pipelines, re-running an entire test suite on every single-line commit wastes compute, delays developer feedback loops, and inflates cloud infrastructure costs. **Diffr** solves this by implementing an intelligent Test Impact Analysis engine for Go: it parses syntactic diffs, traces caller-callee hierarchies through reverse call graphs, prunes non-impacted tests with high fidelity, and maintains low-overhead caching and telemetry across pipeline runs.
 
 ---
 
@@ -117,7 +117,7 @@ Open [http://localhost:8080](http://localhost:8080) to inspect run history, time
 
 Production Kubernetes manifests are included in `/deploy/k8s/`:
 - [`api-deployment.yaml`](file:///deploy/k8s/api-deployment.yaml): Dual-replica Deployment and ClusterIP Service for the web dashboard and REST API.
-- [`ci-job.yaml`](file:///deploy/k8s/ci-job.yaml): Parameterized Kubernetes `Job` template designed to execute within CI pipelines (GKE / Harness CI Step) utilizing external managed services (GCP Memorystore for Redis and MongoDB Atlas via VPC peering).
+- [`ci-job.yaml`](file:///deploy/k8s/ci-job.yaml): Parameterized Kubernetes `Job` template designed to execute within cloud-native CI pipelines (e.g. Argo Workflows, Tekton, or cloud runner pods) utilizing external managed services (GCP Memorystore for Redis and MongoDB Atlas via VPC peering).
 
 *(Note: Designed deployment target, not exercised in local environments).*
 
