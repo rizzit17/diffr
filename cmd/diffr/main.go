@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"diffr/internal/api"
 	"diffr/internal/astgraph"
 	"diffr/internal/cache"
 	"diffr/internal/diffengine"
@@ -378,8 +379,45 @@ func handleStats(args []string) {
 
 func handleServe(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	addr := fs.String("addr", ":8080", "address to listen on")
+	defaultAddr := ":8080"
+	if envPort := os.Getenv("PORT"); envPort != "" {
+		if !strings.HasPrefix(envPort, ":") {
+			defaultAddr = ":" + envPort
+		} else {
+			defaultAddr = envPort
+		}
+	}
+	addr := fs.String("addr", defaultAddr, "address to listen on (e.g. :8080)")
+	repoPath := fs.String("repo", ".", "path to git repository")
+	staticDir := fs.String("static", "web", "path to web dashboard static files")
 	_ = fs.Parse(args)
 
-	fmt.Printf("Starting dashboard server on %s...\n", *addr)
+	st := store.New("", *repoPath)
+	defer st.Close(context.Background())
+
+	srv := api.NewServer(st, *staticDir)
+
+	storageDesc := "MongoDB (connected)"
+	if !st.IsConnected() {
+		storageDesc = "Local Store (.diffr/runs.json fallback)"
+	}
+
+	displayAddr := *addr
+	if strings.HasPrefix(displayAddr, ":") {
+		displayAddr = "http://localhost" + displayAddr
+	}
+
+	fmt.Printf("\n┌────────────────────────────────────────────────────────┐\n")
+	fmt.Printf("│  Diffr — Test Impact Intelligence Dashboard            │\n")
+	fmt.Printf("└────────────────────────────────────────────────────────┘\n")
+	fmt.Printf("  • Server listening on  : %s\n", displayAddr)
+	fmt.Printf("  • API endpoint         : %s/api/runs\n", displayAddr)
+	fmt.Printf("  • Storage backend      : %s\n", storageDesc)
+	fmt.Printf("  • Static assets dir    : %s\n\n", *staticDir)
+	fmt.Println("Press Ctrl+C to stop.")
+
+	if err := http.ListenAndServe(*addr, srv.Handler()); err != nil {
+		fmt.Fprintf(os.Stderr, "server stopped: %v\n", err)
+		os.Exit(1)
+	}
 }
