@@ -17,6 +17,7 @@ type CommentData struct {
 	TestsSkipped     int
 	BaselineMs       int64
 	ActualRunMs      int64
+	CalibrationMs    int64 // > 0 if baseline calibration ran inline on this execution
 	PctSaved         float64
 	ChangedFiles     []string
 	ChangedFunctions []string
@@ -33,16 +34,6 @@ func RenderPRComment(data CommentData) string {
 		reductionPct = (float64(data.TestsSkipped) / float64(data.TotalTests)) * 100.0
 	}
 
-	msSaved := data.BaselineMs - data.ActualRunMs
-	if msSaved < 0 {
-		msSaved = 0
-	}
-
-	cacheStatus := fmt.Sprintf("🟡 **Cold Cache Miss** (%s analysis)", data.AnalysisDuration)
-	if data.CacheHit {
-		cacheStatus = fmt.Sprintf("🟢 **Warm Cache Hit** (%s retrieval)", data.AnalysisDuration)
-	}
-
 	testStatus := "✅ **Passed**"
 	if len(data.ImpactedTests) == 0 {
 		testStatus = "⚪ **Skipped (No Impact)**"
@@ -55,18 +46,42 @@ func RenderPRComment(data CommentData) string {
 	sb.WriteString("| Metric | Result |\n")
 	sb.WriteString("| :--- | :--- |\n")
 	sb.WriteString(fmt.Sprintf("| **Commit Range** | `%s..%s` |\n", data.Ref1, data.Ref2))
-	sb.WriteString(fmt.Sprintf("| **Tests Executed** | **%d** of **%d** (%d skipped — **%.1f%%** reduction) |\n",
+	sb.WriteString(fmt.Sprintf("| **Tests Executed** | **%d** of **%d** (%d skipped — **%.1f%%** test count reduction) |\n",
 		len(data.ImpactedTests), data.TotalTests, data.TestsSkipped, reductionPct))
-	sb.WriteString(fmt.Sprintf("| **Execution Time** | **%d ms** (baseline: %d ms) |\n", data.ActualRunMs, data.BaselineMs))
-	sb.WriteString(fmt.Sprintf("| **Compute Time Saved** | **%d ms** (**%.1f%%** reduction) |\n", msSaved, data.PctSaved))
-	sb.WriteString(fmt.Sprintf("| **Cache Status** | %s |\n", cacheStatus))
+
+	if data.CalibrationMs > 0 {
+		// First-run / cold-run where baseline calibration ran inline
+		totalPipelineMs := data.CalibrationMs + data.ActualRunMs
+		sb.WriteString(fmt.Sprintf("| **Scoped Test Run Time** | **%d ms** |\n", data.ActualRunMs))
+		sb.WriteString(fmt.Sprintf("| **One-Time Calibration Overhead** | **%d ms** (full-suite baseline measurement) |\n", data.CalibrationMs))
+		sb.WriteString(fmt.Sprintf("| **Total Pipeline Time** | **%d ms** (calibration + scoped run) |\n", totalPipelineMs))
+		sb.WriteString(fmt.Sprintf("| **Cache Status** | 🟡 **Cold Run (Calibration Phase)** (%s analysis) |\n", data.AnalysisDuration))
+	} else {
+		// Warm steady-state run where baseline was cached
+		msSaved := data.BaselineMs - data.ActualRunMs
+		if msSaved < 0 {
+			msSaved = 0
+		}
+		cacheStatus := fmt.Sprintf("🟢 **Warm Cache Hit** (%s retrieval)", data.AnalysisDuration)
+		if !data.CacheHit {
+			cacheStatus = fmt.Sprintf("🟡 **Cold Cache Miss** (%s analysis)", data.AnalysisDuration)
+		}
+		sb.WriteString(fmt.Sprintf("| **Execution Time** | **%d ms** (full-suite baseline: %d ms) |\n", data.ActualRunMs, data.BaselineMs))
+		sb.WriteString(fmt.Sprintf("| **Compute Time Saved** | **%d ms** (**%.1f%%** reduction) |\n", msSaved, data.PctSaved))
+		sb.WriteString(fmt.Sprintf("| **Cache Status** | %s |\n", cacheStatus))
+	}
+
 	sb.WriteString(fmt.Sprintf("| **Test Status** | %s |\n\n", testStatus))
 
-	// First-run / cold-run notice vs warm notice
-	if !data.CacheHit {
-		sb.WriteString(fmt.Sprintf("> ℹ️ **First-run calibration**: AST call graph traversal and baseline calibration (%d ms) performed. Subsequent runs on this commit pair resolve in sub-millisecond cache time.\n\n", data.BaselineMs))
-	} else {
+	// Contextual Callout
+	if data.CalibrationMs > 0 {
+		sb.WriteString(fmt.Sprintf("> ℹ️ **First-Run Calibration Notice**: Because this was the initial execution on this repository, Diffr ran an inline full-suite calibration (**%d ms**) to establish the baseline and cached it for 7 days.\n", data.CalibrationMs))
+		sb.WriteString(fmt.Sprintf("> - **Scoped tests ran**: %d of %d tests were executed in %d ms.\n", len(data.ImpactedTests), data.TotalTests, data.ActualRunMs))
+		sb.WriteString("> - **Subsequent PR runs**: Calibration overhead will be **0 ms**, so only the scoped test execution time applies.\n\n")
+	} else if data.CacheHit {
 		sb.WriteString(fmt.Sprintf("> ⚡ **Fast-path cache hit**: Retrieved scoped tests and package mappings in %s, skipping AST re-parsing.\n\n", data.AnalysisDuration))
+	} else if !data.CacheHit {
+		sb.WriteString(fmt.Sprintf("> 🔍 **AST analysis completed**: Analyzed changed files and reverse call graph in %s.\n\n", data.AnalysisDuration))
 	}
 
 	if len(data.ImpactedTests) == 0 {

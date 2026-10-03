@@ -252,6 +252,7 @@ func handleRun(args []string) {
 
 	// 2. Resolve baseline full-suite timing
 	var baselineMs int64
+	var calibrationMs int64
 	if !*forceBaseline {
 		if cachedBaseline, hit := cClient.GetBaseline(ctx, repoHash); hit {
 			baselineMs = cachedBaseline
@@ -265,6 +266,7 @@ func handleRun(args []string) {
 			fmt.Printf("warning: baseline calculation returned error: %v\n", err)
 		}
 		baselineMs = bMs
+		calibrationMs = bMs
 		cClient.SetBaseline(ctx, repoHash, baselineMs)
 		fmt.Printf("%d ms\n", baselineMs)
 	}
@@ -366,6 +368,7 @@ func handleRun(args []string) {
 			TestsSkipped:     testsSkipped,
 			BaselineMs:       baselineMs,
 			ActualRunMs:      actualRunMs,
+			CalibrationMs:    calibrationMs,
 			PctSaved:         pctSaved,
 			ChangedFiles:     changedFiles,
 			ChangedFunctions: changedFuncs,

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestRenderPRComment_ColdRun(t *testing.T) {
+func TestRenderPRComment_ColdRun_WithCalibration(t *testing.T) {
 	data := CommentData{
 		Ref1:             "origin/main",
 		Ref2:             "HEAD",
@@ -18,6 +18,7 @@ func TestRenderPRComment_ColdRun(t *testing.T) {
 		TestsSkipped:     12,
 		BaselineMs:       1800,
 		ActualRunMs:      420,
+		CalibrationMs:    1800,
 		PctSaved:         76.7,
 		ChangedFiles:     []string{"calc/calc.go"},
 		ChangedFunctions: []string{"calc.Add"},
@@ -31,12 +32,13 @@ func TestRenderPRComment_ColdRun(t *testing.T) {
 	expectedPhrases := []string{
 		"### ⚡ Diffr — Test Impact Analysis",
 		"| **Commit Range** | `origin/main..HEAD` |",
-		"| **Tests Executed** | **2** of **14** (12 skipped — **85.7%** reduction) |",
-		"| **Execution Time** | **420 ms** (baseline: 1800 ms) |",
-		"| **Compute Time Saved** | **1380 ms** (**76.7%** reduction) |",
-		"🟡 **Cold Cache Miss** (58.4ms analysis)",
+		"| **Tests Executed** | **2** of **14** (12 skipped — **85.7%** test count reduction) |",
+		"| **Scoped Test Run Time** | **420 ms** |",
+		"| **One-Time Calibration Overhead** | **1800 ms** (full-suite baseline measurement) |",
+		"| **Total Pipeline Time** | **2220 ms** (calibration + scoped run) |",
+		"🟡 **Cold Run (Calibration Phase)** (58.4ms analysis)",
 		"✅ **Passed**",
-		"First-run calibration",
+		"First-Run Calibration Notice",
 		"<summary><b>Impact Details (1 changed / 2 tests)</b></summary>",
 		"`calc/calc.go`",
 		"`calc.Add`",
@@ -63,6 +65,7 @@ func TestRenderPRComment_WarmRun(t *testing.T) {
 		TestsSkipped:     13,
 		BaselineMs:       1800,
 		ActualRunMs:      210,
+		CalibrationMs:    0,
 		PctSaved:         88.3,
 		ChangedFiles:     []string{"calc/calc.go"},
 		ChangedFunctions: []string{"calc.Add"},
@@ -78,6 +81,12 @@ func TestRenderPRComment_WarmRun(t *testing.T) {
 	if !strings.Contains(rendered, "Fast-path cache hit") {
 		t.Errorf("expected fast-path cache notice, got: %s", rendered)
 	}
+	if !strings.Contains(rendered, "| **Execution Time** | **210 ms** (full-suite baseline: 1800 ms) |") {
+		t.Errorf("expected execution time row, got: %s", rendered)
+	}
+	if !strings.Contains(rendered, "| **Compute Time Saved** | **1590 ms** (**88.3%** reduction) |") {
+		t.Errorf("expected compute time saved row, got: %s", rendered)
+	}
 }
 
 func TestRenderPRComment_ZeroImpact(t *testing.T) {
@@ -91,6 +100,7 @@ func TestRenderPRComment_ZeroImpact(t *testing.T) {
 		TestsSkipped:     14,
 		BaselineMs:       1800,
 		ActualRunMs:      0,
+		CalibrationMs:    0,
 		PctSaved:         100.0,
 		ChangedFiles:     []string{"README.md"},
 		ChangedFunctions: nil,
