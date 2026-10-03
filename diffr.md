@@ -10,7 +10,7 @@
 **Diffr** is a Go-based **Test Impact Analysis (TIA)** CLI and observability dashboard. It eliminates redundant test execution in CI/CD pipelines by analyzing syntactic code diffs between two Git references, building a function-level reverse call graph from Go ASTs, calculating transitively impacted tests via Breadth-First Search (BFS), and executing only the scoped test subset.
 
 ### Key Metrics & Performance
-- **Test Execution Reduction**: Typically **40% to 100%** fewer tests executed per commit (e.g., 8 of 14 tests run on internal store changes).
+- **Test Execution Reduction**: Typically **30% to 100%** fewer tests executed per commit (e.g., 16 of 23 tests run on core internal store changes; 0 of 23 on documentation changes).
 - **Analysis Latency (Measured)**:
   - **Cache Miss (Full AST + BFS)**: **55.2ms – 62.6ms** (live local runs).
   - **Cache Hit (Redis / Local Fallback)**: **504µs – 652µs** (sub-millisecond retrieval, bypassing AST parsing entirely).
@@ -307,16 +307,16 @@ jobs:
 | Metric | Result |
 | :--- | :--- |
 | **Commit Range** | `5d1ac4e~1..5d1ac4e` |
-| **Tests Executed** | **8** of **14** (6 skipped — **42.9%** reduction) |
-| **Execution Time** | **426 ms** (baseline: 761 ms) |
-| **Compute Time Saved** | **335 ms** (**44.0%** reduction) |
-| **Cache Status** | 🟢 **Warm Cache Hit** (1.2141ms retrieval) |
+| **Tests Executed** | **16** of **23** (7 skipped — **30.4%** test count reduction) |
+| **Execution Time** | **514 ms** (full-suite baseline: 6252 ms) |
+| **Compute Time Saved** | **5738 ms** (**91.8%** reduction) |
+| **Cache Status** | 🟢 **Warm Cache Hit** (653.8µs retrieval) |
 | **Test Status** | ✅ **Passed** |
 
-> ⚡ **Fast-path cache hit**: Retrieved scoped tests and package mappings in 1.2141ms, skipping AST re-parsing.
+> ⚡ **Fast-path cache hit**: Retrieved scoped tests and package mappings in 653.8µs, skipping AST re-parsing.
 
 <details>
-<summary><b>Impact Details (10 changed / 8 tests)</b></summary>
+<summary><b>Impact Details (10 changed / 16 tests)</b></summary>
 
 **Changed Files (2):**
 - `internal/store/store.go`
@@ -334,11 +334,19 @@ jobs:
 - `store.New`
 - `store.TestStore_LocalFallback`
 
-**Executed Tests (8):**
+**Executed Tests (16):**
 - `api.TestServer_HandleRuns`
 - `astgraph.TestBuildCallGraph`
 - `astgraph.TestMapChangedFunctions`
+- `cache.TestDiskFallback_WhenRedisUnreachable`
+- `cache.TestNew_WithEnvAddr`
+- `cache.TestRedis_WithMiniredis`
 - `diffengine.TestParseUnifiedDiff`
+- `reporter.TestRenderPRComment_ColdRun_WithCalibration`
+- `reporter.TestRenderPRComment_TestFailure`
+- `reporter.TestRenderPRComment_WarmRun`
+- `reporter.TestRenderPRComment_ZeroImpact`
+- `reporter.TestWriteCommentFile`
 - `resolver.TestResolver_Resolve`
 - `runner.TestRunner_RunScoped`
 - `store.TestLiveMongoIndexes`
@@ -346,7 +354,7 @@ jobs:
 
 </details>
 
-*Scoped Test Command:* `go test -v -run ^(TestServer_HandleRuns|TestBuildCallGraph|TestMapChangedFunctions|TestParseUnifiedDiff|TestResolver_Resolve|TestRunner_RunScoped|TestLiveMongoIndexes|TestStore_LocalFallback)$ ./internal/api ./internal/astgraph ./internal/diffengine ./internal/resolver ./internal/runner ./internal/store`
+*Scoped Test Command:* `go test -v -run ^(TestServer_HandleRuns|TestBuildCallGraph|TestMapChangedFunctions|TestDiskFallback_WhenRedisUnreachable|TestNew_WithEnvAddr|TestRedis_WithMiniredis|TestParseUnifiedDiff|TestRenderPRComment_ColdRun_WithCalibration|TestRenderPRComment_TestFailure|TestRenderPRComment_WarmRun|TestRenderPRComment_ZeroImpact|TestWriteCommentFile|TestResolver_Resolve|TestRunner_RunScoped|TestLiveMongoIndexes|TestStore_LocalFallback)$ ./internal/api ./internal/astgraph ./internal/cache ./internal/diffengine ./internal/reporter ./internal/resolver ./internal/runner ./internal/store`
 ```
 
 #### Case B: Cold / First-Run Baseline Calibration Run (`5d1ac4e~1..5d1ac4e`):
