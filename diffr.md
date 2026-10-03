@@ -256,13 +256,152 @@ Starts the web dashboard and REST API server.
   - `internal/runner`: **64.3%** (Scoped `-run` argument builder, Go binary resolution)
   - `cmd/diffr`: **0.0%** (CLI flags/dispatch; exercised via integration runs)
 - [x] Production Dockerfile and Kubernetes deployment manifests.
+- [x] GitHub Action composite integration (`action.yml`) and automated PR comment reporter.
 
 ### Recommended Next Features & Extensibility
-1. **GitHub Action Integration**:
-   - Create an `action.yml` wrapper to run `diffr run origin/main HEAD` on pull requests and post PR comments with savings metrics.
-2. **Dynamic Coverage Profile Ingestion**:
+1. **Dynamic Coverage Profile Ingestion**:
    - Augment the syntactic AST call graph with Go test coverage profiles (`go test -coverprofile=...`) for higher-confidence edge resolution.
-3. **Flaky Test Quarantine**:
+2. **Flaky Test Quarantine**:
    - Track flakiness scores in MongoDB per test ID to prioritize or flag flaky tests.
-4. **Interface Implementation Inference**:
+3. **Interface Implementation Inference**:
    - Incorporate lightweight type-checking (`go/types`) to infer concrete implementations of interfaces for even deeper call graph coverage.
+
+---
+
+## 8. GitHub Action Integration (`action.yml`)
+
+Diffr provides a composite GitHub Action at [`action.yml`](file:///c:/Users/Rishit/Desktop/Diffr/action.yml) designed for pull request workflows. It diffs `origin/<base>..HEAD`, executes only impacted tests, appends metrics to `$GITHUB_STEP_SUMMARY`, and posts an automated PR comment via the GitHub API using `GITHUB_TOKEN`.
+
+### 8.1 Workflow Configuration (`.github/workflows/example-usage.yml`)
+```yaml
+name: Test Impact Analysis
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  impact-analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required for git diff against base ref
+
+      - uses: ./ # Or rizzit17/diffr@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          base-ref: ${{ github.base_ref }}
+          comment-pr: 'true'
+```
+
+### 8.2 Real Rendered PR Comment Outputs (From Live Test Runs)
+
+#### Case A: Warm Cache-Hit Run (`5d1ac4e~1..5d1ac4e`):
+```markdown
+### ⚡ Diffr — Test Impact Analysis
+
+| Metric | Result |
+| :--- | :--- |
+| **Commit Range** | `5d1ac4e~1..5d1ac4e` |
+| **Tests Executed** | **8** of **14** (6 skipped — **42.9%** reduction) |
+| **Execution Time** | **426 ms** (baseline: 761 ms) |
+| **Compute Time Saved** | **335 ms** (**44.0%** reduction) |
+| **Cache Status** | 🟢 **Warm Cache Hit** (1.2141ms retrieval) |
+| **Test Status** | ✅ **Passed** |
+
+> ⚡ **Fast-path cache hit**: Retrieved scoped tests and package mappings in 1.2141ms, skipping AST re-parsing.
+
+<details>
+<summary><b>Impact Details (10 changed / 8 tests)</b></summary>
+
+**Changed Files (2):**
+- `internal/store/store.go`
+- `internal/store/store_test.go`
+
+**Changed Functions (10):**
+- `store.(*AggregateStats).String`
+- `store.(*Store).Close`
+- `store.(*Store).GetRecentRuns`
+- `store.(*Store).GetStats`
+- `store.(*Store).IsConnected`
+- `store.(*Store).SaveRun`
+- `store.(*Store).getLocalRuns`
+- `store.(*Store).saveLocal`
+- `store.New`
+- `store.TestStore_LocalFallback`
+
+**Executed Tests (8):**
+- `api.TestServer_HandleRuns`
+- `astgraph.TestBuildCallGraph`
+- `astgraph.TestMapChangedFunctions`
+- `diffengine.TestParseUnifiedDiff`
+- `resolver.TestResolver_Resolve`
+- `runner.TestRunner_RunScoped`
+- `store.TestLiveMongoIndexes`
+- `store.TestStore_LocalFallback`
+
+</details>
+
+*Scoped Test Command:* `go test -v -run ^(TestServer_HandleRuns|TestBuildCallGraph|TestMapChangedFunctions|TestParseUnifiedDiff|TestResolver_Resolve|TestRunner_RunScoped|TestLiveMongoIndexes|TestStore_LocalFallback)$ ./internal/api ./internal/astgraph ./internal/diffengine ./internal/resolver ./internal/runner ./internal/store`
+```
+
+#### Case B: Cold / First-Run Baseline Calibration Run (`5d1ac4e~1..5d1ac4e`):
+```markdown
+### ⚡ Diffr — Test Impact Analysis
+
+| Metric | Result |
+| :--- | :--- |
+| **Commit Range** | `5d1ac4e~1..5d1ac4e` |
+| **Tests Executed** | **16** of **23** (7 skipped — **30.4%** reduction) |
+| **Execution Time** | **5636 ms** (baseline: 5618 ms) |
+| **Compute Time Saved** | **0 ms** (**0.0%** reduction) |
+| **Cache Status** | 🟡 **Cold Cache Miss** (56.2754ms analysis) |
+| **Test Status** | ✅ **Passed** |
+
+> ℹ️ **First-run calibration**: AST call graph traversal and baseline calibration (5618 ms) performed. Subsequent runs on this commit pair resolve in sub-millisecond cache time.
+
+<details>
+<summary><b>Impact Details (10 changed / 16 tests)</b></summary>
+
+**Changed Files (2):**
+- `internal/store/store.go`
+- `internal/store/store_test.go`
+
+**Changed Functions (10):**
+- `store.(*AggregateStats).String`
+- `store.(*Store).Close`
+- `store.(*Store).GetRecentRuns`
+- `store.(*Store).GetStats`
+- `store.(*Store).IsConnected`
+- `store.(*Store).SaveRun`
+- `store.(*Store).getLocalRuns`
+- `store.(*Store).saveLocal`
+- `store.New`
+- `store.TestStore_LocalFallback`
+
+**Executed Tests (16):**
+- `api.TestServer_HandleRuns`
+- `astgraph.TestBuildCallGraph`
+- `astgraph.TestMapChangedFunctions`
+- `cache.TestDiskFallback_WhenRedisUnreachable`
+- `cache.TestNew_WithEnvAddr`
+- `cache.TestRedis_WithMiniredis`
+- `diffengine.TestParseUnifiedDiff`
+- `reporter.TestRenderPRComment_ColdRun`
+- `reporter.TestRenderPRComment_TestFailure`
+- `reporter.TestRenderPRComment_WarmRun`
+- `reporter.TestRenderPRComment_ZeroImpact`
+- `reporter.TestWriteCommentFile`
+- `resolver.TestResolver_Resolve`
+- `runner.TestRunner_RunScoped`
+- `store.TestLiveMongoIndexes`
+- `store.TestStore_LocalFallback`
+
+</details>
+
+*Scoped Test Command:* `go test -v -run ^(TestServer_HandleRuns|TestBuildCallGraph|TestMapChangedFunctions|TestDiskFallback_WhenRedisUnreachable|TestNew_WithEnvAddr|TestRedis_WithMiniredis|TestParseUnifiedDiff|TestRenderPRComment_ColdRun|TestRenderPRComment_TestFailure|TestRenderPRComment_WarmRun|TestRenderPRComment_ZeroImpact|TestWriteCommentFile|TestResolver_Resolve|TestRunner_RunScoped|TestLiveMongoIndexes|TestStore_LocalFallback)$ ./internal/api ./internal/astgraph ./internal/cache ./internal/diffengine ./internal/reporter ./internal/resolver ./internal/runner ./internal/store`
+```
