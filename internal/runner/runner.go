@@ -55,8 +55,10 @@ func (r *Runner) Run(impactedTests []string) (*RunSummary, error) {
 		}, nil
 	}
 
-	// Group tests by package directory
-	pkgTests := make(map[string][]string)
+	var allTestNames []string
+	var pkgTargets []string
+	seenPkg := make(map[string]bool)
+
 	for _, testID := range impactedTests {
 		info, exists := r.Graph.Functions[testID]
 		pkgDir := "."
@@ -65,42 +67,35 @@ func (r *Runner) Run(impactedTests []string) (*RunSummary, error) {
 			pkgDir = info.PkgDir
 			testName = info.Name
 		} else {
-			// Fallback parsing: pkg.TestName
 			parts := strings.Split(testID, ".")
 			testName = parts[len(parts)-1]
 		}
-		pkgTests[pkgDir] = append(pkgTests[pkgDir], testName)
-	}
+		allTestNames = append(allTestNames, testName)
 
-	var combinedOutput strings.Builder
-	allPassed := true
-	startTotal := time.Now()
-
-	for pkgDir, testNames := range pkgTests {
-		// Construct regex: ^(TestA|TestB)$
-		regexPattern := "^(" + strings.Join(testNames, "|") + ")$"
 		pkgTarget := "./" + filepath.ToSlash(pkgDir)
 		if pkgDir == "." {
 			pkgTarget = "."
 		}
-
-		args := []string{"test", "-v", "-run", regexPattern, pkgTarget}
-		cmd := exec.Command("go", args...)
-		if r.RepoDir != "" {
-			cmd.Dir = r.RepoDir
-		}
-
-		var outBuf bytes.Buffer
-		cmd.Stdout = &outBuf
-		cmd.Stderr = &outBuf
-
-		err := cmd.Run()
-		combinedOutput.WriteString(outBuf.String())
-		if err != nil {
-			allPassed = false
+		if !seenPkg[pkgTarget] {
+			seenPkg[pkgTarget] = true
+			pkgTargets = append(pkgTargets, pkgTarget)
 		}
 	}
 
+	regexPattern := "^(" + strings.Join(allTestNames, "|") + ")$"
+	args := append([]string{"test", "-v", "-run", regexPattern}, pkgTargets...)
+
+	startTotal := time.Now()
+	cmd := exec.Command("go", args...)
+	if r.RepoDir != "" {
+		cmd.Dir = r.RepoDir
+	}
+
+	var outBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &outBuf
+
+	err := cmd.Run()
 	actualDuration := time.Since(startTotal).Milliseconds()
 
 	return &RunSummary{
@@ -108,8 +103,8 @@ func (r *Runner) Run(impactedTests []string) (*RunSummary, error) {
 		TotalTestsInRepo: totalTests,
 		TestsSkipped:     skipped,
 		ActualRunMs:      actualDuration,
-		Success:          allPassed,
-		Output:           combinedOutput.String(),
+		Success:          err == nil,
+		Output:           outBuf.String(),
 	}, nil
 }
 

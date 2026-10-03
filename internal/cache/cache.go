@@ -19,8 +19,16 @@ import (
 const (
 	DefaultImpactTTL   = 24 * time.Hour
 	DefaultBaselineTTL = 7 * 24 * time.Hour
-	DefaultRedisAddr   = "localhost:6379"
+	DefaultRedisAddr   = "127.0.0.1:6379"
 )
+
+type noopLogger struct{}
+
+func (n *noopLogger) Printf(ctx context.Context, format string, v ...interface{}) {}
+
+func init() {
+	redis.SetLogger(&noopLogger{})
+}
 
 // CachedImpact holds the cached analysis results for a commit pair.
 type CachedImpact struct {
