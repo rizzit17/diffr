@@ -1,9 +1,16 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"time"
+
+	"diffr/internal/astgraph"
+	"diffr/internal/cache"
+	"diffr/internal/diffengine"
+	"diffr/internal/resolver"
 )
 
 const usageText = `diffr - Go Test Impact Analysis (TIA) CLI
@@ -61,7 +68,85 @@ func handleDiff(args []string) {
 		ref2 = remaining[1]
 	}
 
-	fmt.Printf("Analyzing diff between %s and %s in repo '%s'...\n", ref1, ref2, *repoPath)
+	start := time.Now()
+	repoHash := cache.ComputeRepoHash(*repoPath)
+	cClient := cache.New("")
+	defer cClient.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// 1. Cache-first lookup
+	if cached, hit := cClient.GetImpact(ctx, repoHash, ref1, ref2); hit {
+		elapsed := time.Since(start)
+		fmt.Printf("Diff Analysis: %s..%s (repo: %s)\n", ref1, ref2, *repoPath)
+		fmt.Printf("Status: CACHE HIT (retrieval: %v)\n\n", elapsed)
+		printImpactSummary(cached.ChangedFiles, cached.ChangedFunctions, cached.ImpactedTests, cached.TotalTestsInRepo, cached.TestsSkipped)
+		return
+	}
+
+	// 2. Cache miss: Full analysis
+	diffEng := diffengine.New(*repoPath)
+	changedFiles, err := diffEng.GetDiff(ref1, ref2)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error computing git diff: %v\n", err)
+		os.Exit(1)
+	}
+
+	graph, err := astgraph.Build(*repoPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error building AST call graph: %v\n", err)
+		os.Exit(1)
+	}
+
+	changedFuncs := graph.MapChangedFunctions(changedFiles)
+	res := resolver.New(graph).Resolve(changedFiles, changedFuncs)
+
+	// 3. Populate cache
+	cClient.SetImpact(ctx, repoHash, ref1, ref2, &cache.CachedImpact{
+		ImpactedTests:    res.ImpactedTests,
+		ChangedFunctions: res.ChangedFunctions,
+		ChangedFiles:     res.ChangedFiles,
+		TotalTestsInRepo: res.TotalTestsInRepo,
+		TestsSkipped:     res.TestsSkipped,
+	})
+
+	elapsed := time.Since(start)
+	fmt.Printf("Diff Analysis: %s..%s (repo: %s)\n", ref1, ref2, *repoPath)
+	fmt.Printf("Status: CACHE MISS (analysis time: %v)\n\n", elapsed)
+	printImpactSummary(res.ChangedFiles, res.ChangedFunctions, res.ImpactedTests, res.TotalTestsInRepo, res.TestsSkipped)
+}
+
+func printImpactSummary(files, funcs, tests []string, totalTests, skipped int) {
+	fmt.Printf("Changed Files (%d):\n", len(files))
+	for _, f := range files {
+		fmt.Printf("  • %s\n", f)
+	}
+	if len(files) == 0 {
+		fmt.Println("  (none)")
+	}
+
+	fmt.Printf("\nChanged Functions (%d):\n", len(funcs))
+	for _, fn := range funcs {
+		fmt.Printf("  • %s\n", fn)
+	}
+	if len(funcs) == 0 {
+		fmt.Println("  (none)")
+	}
+
+	reductionPct := 0.0
+	if totalTests > 0 {
+		reductionPct = (float64(skipped) / float64(totalTests)) * 100.0
+	}
+
+	fmt.Printf("\nImpacted Tests (%d of %d total, %d skipped — %.1f%% reduction):\n",
+		len(tests), totalTests, skipped, reductionPct)
+	for _, t := range tests {
+		fmt.Printf("  ✓ %s\n", t)
+	}
+	if len(tests) == 0 {
+		fmt.Println("  (no impacted tests detected)")
+	}
 }
 
 func handleRun(args []string) {
