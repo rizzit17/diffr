@@ -186,11 +186,16 @@ func TestRenderPRComment_RuntimeRegression(t *testing.T) {
 	}
 
 	rendered := RenderPRComment(data)
-	if !strings.Contains(rendered, "⚠️ **-350 ms** (slower than baseline)") {
-		t.Errorf("expected regression metric in table, got: %s", rendered)
+
+	expectedTable := "| **Compute Time Saved** | ⚠️ **-350 ms** (slower than baseline) |"
+	if !strings.Contains(rendered, expectedTable) {
+		t.Errorf("expected regression metric in table:\n%s\ngot:\n%s", expectedTable, rendered)
 	}
-	if !strings.Contains(rendered, "Test Runtime Regression / Contention") {
-		t.Errorf("expected regression callout block, got: %s", rendered)
+
+	expectedWarning := "> ⚠️ **Test Runtime Regression / Contention**: Scoped test run took **1350 ms**, which exceeded the baseline (**1000 ms**) by **+350 ms**. Check for introduced sleeps, un-indexed queries, or CI runner CPU throttling."
+	if !strings.Contains(rendered, expectedWarning) {
+		t.Errorf("expected exact warning callout block:\n%s\ngot:\n%s", expectedWarning, rendered)
 	}
 }
+
 
