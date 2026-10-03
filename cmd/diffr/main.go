@@ -13,6 +13,7 @@ import (
 	"diffr/internal/astgraph"
 	"diffr/internal/cache"
 	"diffr/internal/diffengine"
+	"diffr/internal/reporter"
 	"diffr/internal/resolver"
 	"diffr/internal/runner"
 	"diffr/internal/store"
@@ -161,6 +162,7 @@ func handleRun(args []string) {
 	repoPath := fs.String("repo", ".", "path to git repository")
 	forceBaseline := fs.Bool("baseline", false, "force recomputing full-suite baseline time")
 	dryRun := fs.Bool("dry-run", false, "simulate test impact without executing tests")
+	commentFile := fs.String("comment-file", "", "path to write GitHub PR comment markdown summary")
 	_ = fs.Parse(args)
 
 	ref1 := "HEAD~1"
@@ -349,6 +351,31 @@ func handleRun(args []string) {
 			fmt.Println("Persistence         : MongoDB (synced)")
 		} else {
 			fmt.Println("Persistence         : Local store (.diffr/runs.json)")
+		}
+	}
+
+	// 6. Write PR comment summary if requested or running in CI
+	if *commentFile != "" || os.Getenv("GITHUB_STEP_SUMMARY") != "" {
+		commentData := reporter.CommentData{
+			Ref1:             ref1,
+			Ref2:             ref2,
+			CacheHit:         cacheHit,
+			AnalysisDuration: analysisDisplay,
+			TotalTests:       totalTestsInRepo,
+			ImpactedTests:    impactedTests,
+			TestsSkipped:     testsSkipped,
+			BaselineMs:       baselineMs,
+			ActualRunMs:      actualRunMs,
+			PctSaved:         pctSaved,
+			ChangedFiles:     changedFiles,
+			ChangedFunctions: changedFuncs,
+			Command:          rn.LastCommand,
+			Success:          success,
+		}
+		if err := reporter.WriteCommentFile(*commentFile, commentData); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to write comment file: %v\n", err)
+		} else if *commentFile != "" {
+			fmt.Printf("PR Comment          : Written to %s\n", *commentFile)
 		}
 	}
 
