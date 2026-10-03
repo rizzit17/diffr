@@ -107,9 +107,13 @@ Run the identical command again:
 
 #### Step 5: Launch Dashboard
 ```bash
-./diffr serve -addr :8080
+./diffr serve --addr :8080
 ```
-Open [http://localhost:8080](http://localhost:8080) to inspect run history, time-saved trends, and cache status.
+Open [http://localhost:8080](http://localhost:8080) to inspect real-time cumulative compute savings, run history, and cache statuses:
+
+<p align="center">
+  <img src="assets/dashboard.png" alt="Diffr Developer Dashboard" width="100%" />
+</p>
 
 ---
 
