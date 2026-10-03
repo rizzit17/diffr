@@ -69,7 +69,7 @@ func Build(repoDir string) (*Graph, error) {
 		}
 		name := d.Name()
 		if d.IsDir() {
-			if name == "vendor" || name == ".git" || name == "node_modules" || strings.HasPrefix(name, ".") {
+			if path != repoDir && (name == "vendor" || name == ".git" || name == "node_modules" || (name != "." && strings.HasPrefix(name, "."))) {
 				return filepath.SkipDir
 			}
 			return nil
