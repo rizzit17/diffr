@@ -194,6 +194,7 @@ diffr/
 | **Diff Engine** | Brand new file with no prior version | Handles `--- /dev/null` and `@@ -0,0 +1,N @@` without index out of bounds | Tested in `TestParseUnifiedDiff` & verified on live commit adding new files |
 | **Diff Engine** | Off-by-one errors at function boundaries | Inclusive line range check `!(lr.End < fn.StartLine \|\| lr.Start > fn.EndLine)` | Verified on `StartLine`, `EndLine` (closing brace), and `EndLine + 1` |
 | **Cache Layer** | Re-building AST on cache hit | `CachedImpact` includes `TestPackages` mapping; `runner.NewFromCache` executes directly | Live log verified: `run` analysis drops from **62.6ms** to **504.8µs**; `diff` drops from **55.3ms** to **504.3µs** |
+| **Cache Layer** | Redis service offline / unreachable | Degrades to `.diffr/` disk files for impact and baseline without blocking runs | Verified via `TestDiskFallback_WhenRedisUnreachable` and `TestRedis_WithMiniredis` |
 | **Cache Layer** | Cache key collisons / TTL mismatch | Exact key schemas `diffr:{repoHash}:{ref1}:{ref2}` (24h) and `diffr:baseline:{repoHash}` (7d) | Verified against specification in `system-design.md` |
 | **Test Runner** | Global `./...` shortcut defeating scoping | Maps tests to package directories; executes only affected package paths | Command logging verifies `go test -v -run ^(...) <pkg1> <pkg2>` |
 | **Test Runner** | Baseline recomputed on every run | Baseline stored in Redis / file; retrieved in 0ms on subsequent runs | Live runs demonstrate single one-time calibration |
@@ -245,14 +246,14 @@ Starts the web dashboard and REST API server.
 - [x] MongoDB persistence layer with compound indexes.
 - [x] Go standard library REST API server.
 - [x] Clean dark-mode dashboard with real-time Canvas visualization.
-- [x] Test coverage across `internal/` packages: **68.1% of statements** (`go test -cover ./internal/...`):
+- [x] Test coverage across `internal/` packages: **77.5% of statements** (`go test -cover ./internal/...`):
   - `internal/astgraph`: **87.9%** (AST parsing, receiver types, edge extraction)
   - `internal/resolver`: **87.3%** (BFS reverse graph traversal, transitive propagation)
+  - `internal/cache`: **87.2%** (Disk fallback, key formatting, miniredis simulation, and graceful degradation)
   - `internal/store`: **74.7%** (MongoDB persistence, aggregation, local JSON fallback)
   - `internal/diffengine`: **67.6%** (Unified diff parser, chunk & boundary mapping)
   - `internal/api`: **64.3%** (HTTP server routes, CORS, JSON response contracts)
   - `internal/runner`: **64.3%** (Scoped `-run` argument builder, Go binary resolution)
-  - `internal/cache`: **14.9%** (Key format & hashing; live Redis I/O and fallbacks not exercised in unit tests)
   - `cmd/diffr`: **0.0%** (CLI flags/dispatch; exercised via integration runs)
 - [x] Production Dockerfile and Kubernetes deployment manifests.
 
