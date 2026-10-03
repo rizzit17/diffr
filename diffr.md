@@ -201,6 +201,17 @@ diffr/
 | **MongoDB** | Missing index declarations | Compound and descending indexes created during connection initialization | Verified conditionally via `TestLiveMongoIndexes`: queries `collection.Indexes().List()` when MongoDB is up on `127.0.0.1:27017` (skips cleanly with `t.Skip` if offline) |
 | **Dashboard** | Silent fallback to fake mock data | UI directly calls `/api/runs` and renders live MongoDB data or explicit empty state | Verified in `app.js` and live HTTP response |
 
+### 5.1 Known Limitations & Architectural Tradeoffs
+
+1. **Inline Baseline Calibration on Cold Path (First Run Overhead)**:
+   - *Design Decision*: When Diffr runs on a brand new repository or after baseline cache expiry (7-day TTL), it executes the full test suite (`RunBaseline()`) inline before executing scoped tests.
+   - *The Tradeoff*: The first-ever PR run pays the calibration cost once (e.g., full suite run + scoped run). An alternative would require an external pre-flight CI step or scheduled cron to populate `diffr:baseline:{repoHash}`. Diffr chooses inline execution to guarantee **zero-configuration adoption** for downstream repositories, making this one-time calibration overhead explicit in the PR comment breakdown (`One-Time Calibration Overhead: X ms`, `Scoped Test Run Time: Y ms`) rather than hiding it or skewing savings.
+2. **Runtime Regressions & Negative Time Savings**:
+   - *Design Decision*: If a code change or runner noise introduces latency (e.g., deadlock, sleep, un-indexed query, or CI runner CPU throttling) such that `actualRunMs > baselineMs`, Diffr does **not** silently zero the delta (`0 ms saved`).
+   - *The Safeguard*: The CLI logs an explicit warning (`⚠️ -X ms slower than baseline`), and the PR comment displays `⚠️ -X ms (slower than baseline)` alongside an actionable alert callout warning the developer of potential performance regressions.
+3. **Syntactic Call Graph Boundaries**:
+   - Dynamic interface invocations without concrete type definitions remain conservative boundaries (interfaces fall through safely rather than guessing or panicking).
+
 ---
 
 ## 6. CLI Command Reference
@@ -308,12 +319,12 @@ jobs:
 | :--- | :--- |
 | **Commit Range** | `5d1ac4e~1..5d1ac4e` |
 | **Tests Executed** | **16** of **23** (7 skipped — **30.4%** test count reduction) |
-| **Execution Time** | **514 ms** (full-suite baseline: 6252 ms) |
-| **Compute Time Saved** | **5738 ms** (**91.8%** reduction) |
-| **Cache Status** | 🟢 **Warm Cache Hit** (653.8µs retrieval) |
+| **Execution Time** | **477 ms** (full-suite baseline: 853 ms) |
+| **Compute Time Saved** | **376 ms** (**44.1%** reduction) |
+| **Cache Status** | 🟢 **Warm Cache Hit** (< 1ms retrieval) |
 | **Test Status** | ✅ **Passed** |
 
-> ⚡ **Fast-path cache hit**: Retrieved scoped tests and package mappings in 653.8µs, skipping AST re-parsing.
+> ⚡ **Fast-path cache hit**: Retrieved scoped tests and package mappings in < 1ms, skipping AST re-parsing.
 
 <details>
 <summary><b>Impact Details (10 changed / 16 tests)</b></summary>

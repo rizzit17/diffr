@@ -58,23 +58,31 @@ func RenderPRComment(data CommentData) string {
 		sb.WriteString(fmt.Sprintf("| **Cache Status** | 🟡 **Cold Run (Calibration Phase)** (%s analysis) |\n", data.AnalysisDuration))
 	} else {
 		// Warm steady-state run where baseline was cached
-		msSaved := data.BaselineMs - data.ActualRunMs
-		if msSaved < 0 {
-			msSaved = 0
-		}
 		cacheStatus := fmt.Sprintf("🟢 **Warm Cache Hit** (%s retrieval)", data.AnalysisDuration)
 		if !data.CacheHit {
 			cacheStatus = fmt.Sprintf("🟡 **Cold Cache Miss** (%s analysis)", data.AnalysisDuration)
 		}
 		sb.WriteString(fmt.Sprintf("| **Execution Time** | **%d ms** (full-suite baseline: %d ms) |\n", data.ActualRunMs, data.BaselineMs))
-		sb.WriteString(fmt.Sprintf("| **Compute Time Saved** | **%d ms** (**%.1f%%** reduction) |\n", msSaved, data.PctSaved))
+		if data.BaselineMs > 0 && data.ActualRunMs > data.BaselineMs {
+			msRegression := data.ActualRunMs - data.BaselineMs
+			sb.WriteString(fmt.Sprintf("| **Compute Time Saved** | ⚠️ **-%d ms** (slower than baseline) |\n", msRegression))
+		} else {
+			msSaved := data.BaselineMs - data.ActualRunMs
+			if msSaved < 0 {
+				msSaved = 0
+			}
+			sb.WriteString(fmt.Sprintf("| **Compute Time Saved** | **%d ms** (**%.1f%%** reduction) |\n", msSaved, data.PctSaved))
+		}
 		sb.WriteString(fmt.Sprintf("| **Cache Status** | %s |\n", cacheStatus))
 	}
 
 	sb.WriteString(fmt.Sprintf("| **Test Status** | %s |\n\n", testStatus))
 
 	// Contextual Callout
-	if data.CalibrationMs > 0 {
+	if data.CalibrationMs == 0 && data.BaselineMs > 0 && data.ActualRunMs > data.BaselineMs {
+		regressionMs := data.ActualRunMs - data.BaselineMs
+		sb.WriteString(fmt.Sprintf("> ⚠️ **Test Runtime Regression / Contention**: Scoped test run took **%d ms**, which exceeded the baseline (**%d ms**) by **+%d ms**. Check for introduced sleeps, un-indexed queries, or CI runner CPU throttling.\n\n", data.ActualRunMs, data.BaselineMs, regressionMs))
+	} else if data.CalibrationMs > 0 {
 		sb.WriteString(fmt.Sprintf("> ℹ️ **First-Run Calibration Notice**: Because this was the initial execution on this repository, Diffr ran an inline full-suite calibration (**%d ms**) to establish the baseline and cached it for 7 days.\n", data.CalibrationMs))
 		sb.WriteString(fmt.Sprintf("> - **Scoped tests ran**: %d of %d tests were executed in %d ms.\n", len(data.ImpactedTests), data.TotalTests, data.ActualRunMs))
 		sb.WriteString("> - **Subsequent PR runs**: Calibration overhead will be **0 ms**, so only the scoped test execution time applies.\n\n")

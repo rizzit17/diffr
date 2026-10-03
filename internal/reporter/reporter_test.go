@@ -171,3 +171,26 @@ func TestWriteCommentFile(t *testing.T) {
 		t.Errorf("summary file content invalid: %s", string(summaryContent))
 	}
 }
+
+func TestRenderPRComment_RuntimeRegression(t *testing.T) {
+	data := CommentData{
+		Ref1:          "main",
+		Ref2:          "HEAD",
+		TotalTests:    10,
+		ImpactedTests: []string{"calc.TestAdd"},
+		BaselineMs:    1000,
+		ActualRunMs:   1350, // 350ms regression
+		CalibrationMs: 0,
+		Success:       true,
+		CacheHit:      true,
+	}
+
+	rendered := RenderPRComment(data)
+	if !strings.Contains(rendered, "⚠️ **-350 ms** (slower than baseline)") {
+		t.Errorf("expected regression metric in table, got: %s", rendered)
+	}
+	if !strings.Contains(rendered, "Test Runtime Regression / Contention") {
+		t.Errorf("expected regression callout block, got: %s", rendered)
+	}
+}
+

@@ -324,7 +324,11 @@ func handleRun(args []string) {
 	fmt.Printf("\n--- Performance Impact ---\n")
 	fmt.Printf("Baseline Full Suite : %d ms\n", baselineMs)
 	fmt.Printf("Scoped Test Run     : %d ms\n", actualRunMs)
-	fmt.Printf("Time Saved          : %d ms (%.1f%% reduction)\n", msSaved, pctSaved)
+	if actualRunMs > baselineMs && baselineMs > 0 {
+		fmt.Printf("Time Saved          : ⚠️ -%d ms (slower than baseline — possible test regression or runner contention)\n", actualRunMs-baselineMs)
+	} else {
+		fmt.Printf("Time Saved          : %d ms (%.1f%% reduction)\n", msSaved, pctSaved)
+	}
 
 	// 5. Store run metrics
 	st := store.New("", *repoPath)
