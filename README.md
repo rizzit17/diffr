@@ -1,4 +1,4 @@
-# Diffr — Go Test Impact Analysis (TIA)
+# Diffr : Go Test Impact Analysis (TIA)
 
 **Diffr** is a high-performance Test Impact Analysis CLI and minimal developer dashboard for Go repositories. Given two git references (e.g. `HEAD~1` and `HEAD`), Diffr calculates the syntactic diff, walks the Go AST to build a function-level reverse call graph, resolves the minimal set of impacted tests transitively using BFS, executes only those tests, and records time-saved metrics into MongoDB with sub-millisecond Redis caching.
 
